@@ -197,3 +197,4 @@ kt <- gsub(".*midrule", "", kt)
 kt <- gsub("bottomrule.*$", "", kt)
 table_out <- substr(kt, 1, nchar(kt) - 1)
 save_kable(table_out, file = paste0(outpath, "tab1_input.tex"), keep_tex = TRUE)
+
