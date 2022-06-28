@@ -31,10 +31,14 @@ librarian::shelf(tidyverse,
 acm_2020_complete <- read.delim2(here("raw_data/Mortality_Statistics_2020_Complete.txt")) %>% 
   clean_names() %>% 
   select(-c(notes)) %>% 
-  rename(county_name =  "residence_county") %>% 
-  separate(county_name, into = c("county_name", "state"), sep = ", ") %>%
-  mutate(county_name = str_remove_all(string = county_name, pattern = " County")) %>% 
-  rename(county_code = "residence_county_code") %>%
+  rename(county =  "residence_county") %>% 
+  separate(county, into = c("county", "state"), sep = ", ") %>%
+  mutate(county = str_remove_all(string = county, pattern = " County")) %>% 
+  rename(county_code = "residence_county_code")
+
+#add year column 
+acm_2020_complete$year <- 2020
+
 ```
 
 ```{r}
@@ -69,8 +73,14 @@ pct_miss(acm_2020_complete)
 # Confirm that NA's were removed from state column
 #pct_miss(MCR_LTER_bleaching_data_clean$Percent_bleached)
 ```
-
-
+```{r}
+#create lag time
+acm_2020_complete <- acm_2020_complete %>% 
+group_by(county_code) %>% 
+  mutate(death_rate_lag1 = c(crude_rate[-1], NA)) %>% 
+  ungroup() %>% 
+  filter(year == 2020)
+```
 
 ```{r}
 #make csv file 

@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------
 #Packages
-library(tidyr)
+library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(data.table)
@@ -85,19 +85,46 @@ fit <- glm(deaths ~ death_rate_lag1 +
 
 #Compute cluster-robust errors
 vmat_rob <- vcovCL(fit,cluster = ~ county_code)
-clust_ses <- sqrt(diag(vmat_rob))
+clust_ses <- sqrt(diag(vmat_rob)) #produces warning: NAs produced 
 
-if(1==1){
-  save(clust_ses, file = 'estimated_poisson_glm_ses.rda')
-}
+# if(1==1){
+#   save(clust_ses, file = 'estimated_poisson_glm_ses.rda')
+# }
 #Add fitted values for all years and predicted values for 2020
-dat_est <- dat_est %>%
-  mutate(fitted_deaths_all_yrs = exp(predict.glm(fit, dat_est)),
-         fitted_death_rate_all_yrs = fitted_deaths_all_yrs/death_offset)
 
-dat_2020 <- dat_2020 %>% 
-  mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2020)),
-         fitted_death_rate_2020 = fitted_deaths_2020/death_offset)
+dat_est <- dat_est %>%
+  mutate(fitted_deaths_all_yrs = exp(predict.glm(fit, dat_est)),)
+         #fitted_death_rate_all_yrs = fitted_deaths_all_yrs/death_offset)
+
+#read in 2020 complete data 
+dat_2020 <- read_csv(here("final_data/2020_ACM_complete.csv"))
+
+#base_year = 1998
+#set time var
+dat_2020_edit <- dat_2020 %>%
+  filter(!is.na(county)) %>% # excluded ' year >= 2011, ' here bc gives error
+  mutate(time = year - base_year, #Normalize time to 1999 = 1
+         time_orig_vals = time)
+
+#subset to include the 500 most populous counties
+dat_2020_edit <- subset(dat_2020_edit, county_code %in% dat_500$county_code)
+
+#check to see that 500 unique counties are represented
+num_counties_dat_500_2020 <- length(unique(dat_2020_edit$county_code))
+num_counties_dat_500_2020
+
+dat_2020 <- dat_2020_edit %>% 
+  mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2020_edit)),
+         #fitted_death_rate_2020 = fitted_deaths_2020/death_offset
+  )
+
+
+
+
+
+# dat_2020 <- dat_2020 %>% 
+#   mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2020)),
+#          fitted_death_rate_2020 = fitted_deaths_2020/death_offset)
 
 #-------------------------------------------------------------------------
 #-------------------------------------------------------------------------
