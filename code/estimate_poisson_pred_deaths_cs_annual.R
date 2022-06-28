@@ -9,11 +9,11 @@ library(sandwich)
 library(here)
 
 #Set path to main folder
-#main_file_path <- "..."
+main_file_path <- "..."
 
-#ref_tables <- paste0(main_file_path,'/raw_data')
-#libin <- paste0(main_file_path,'/processed_data')
-#libout <- paste0(main_file_path,'/final_data')
+ref_tables <- paste0(main_file_path,'/raw_data')
+libin <- paste0(main_file_path,'/processed_data')
+libout <- paste0(main_file_path,'/final_data')
 
 #-------------------------------------------------------------------------
 #Utility Functions and External Macors
@@ -44,20 +44,44 @@ base_year <- 1998
 dat_edit <- dat %>% filter(year >= 2011, !is.na(county_code)) %>%
   mutate(time = year - base_year, #Normalize time to 1999=1
          time_orig_vals = time)
-dat_edit <- dat_edit %>% arrange(county_code,year)
-dat_est <- dat_edit %>% filter(year < 2020) 
-dat_2020 <- dat_edit %>% filter(year == 2020)
+#dat_edit <- dat_edit %>% arrange(county_code,year)
+#dat_est <- dat_edit %>% filter(year < 2020) 
+#dat_2020 <- dat_edit %>% filter(year == 2020)
+
+#take the mean population over the 8 yrs represented 
+dat_500 <- dat_edit %>% 
+  group_by(county_code) %>% 
+  summarize(mean_pop = mean(population)) %>% 
+  ungroup()
+
+#subset the top 500 most populous counties 
+dat_500 <- dat_500[order(dat_500$mean_pop, decreasing = TRUE),]
+dat_500 <- dat_500[1:500,]
+dat_edit <- subset(dat_edit, county_code %in% dat_500$county_code)
+
+#check to see that 500 unique counties are represented
+num_counties_dat_500 <- length(unique(dat_edit$county_code))
+num_counties_dat_500
+
+#arrange/order counties by name and year
+dat_est <- dat_edit %>% arrange(county, year)
 
 
 
-fit <- glm(total_deaths ~ offset(log(death_offset)) + death_rate_lag1 + time +
-             time*factor(county_code) , family = quasipoisson(link = "log") ,data = dat_est)
 
 
-if(1==1){
-  setwd(libin)
-  save(fit, file = 'estimated_poisson_glm_parameters.rda')
-}
+fit <- glm(deaths ~ death_rate_lag1 +
+             time +
+             time*factor(county_code),
+           family = quasipoisson(link = "log"),
+           data = dat_est)
+
+
+# if(1==1){
+#   setwd(libin)
+#   save(fit, file = 'estimated_poisson_glm_parameters.rda')
+# }
+
 
 #Compute cluster-robust errors
 vmat_rob <- vcovCL(fit,cluster = ~ county_code)
