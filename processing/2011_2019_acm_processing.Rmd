@@ -68,7 +68,7 @@ pct_miss(acm_2011_2019)
 #create lag time
 acm_2011_2019 <- acm_2011_2019 %>% 
 group_by(county_code) %>% 
-  mutate(death_rate_lag1 = c(crude_rate[-1], NA)) %>% 
+  mutate(death_rate_lag1 = lag(crude_rate) %>% 
   ungroup() 
 ```
 
