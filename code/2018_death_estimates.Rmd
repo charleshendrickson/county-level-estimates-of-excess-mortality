@@ -1,0 +1,284 @@
+---
+title: "2018_death_estimates"
+author: "Charles Hendrickson"
+date: '2022-06-30'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries 
+
+```{r}
+#install and load librarian package if needed 
+if (!require(librarian)) {
+  install.packages("librarian")
+  library(librarian)
+}
+
+# load packages
+shelf(tidyr,
+      dplyr,
+      ggplot2,
+      data.table,
+      stringr,
+      sandwich,
+      here,
+      usmap,
+      arm)
+
+#source functions
+##misc functions
+source(here("code/ackley_funs.R"))
+##This is a modification of the add_pi function in ciTools which uses robust standard errors
+##See https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
+source(here("code/sim_glm_robust_fun.R")) 
+
+set.seed(59)
+```
+
+# Import Data
+
+```{r}
+dat <- read.csv(here('raw_data/acm_2009-2018.csv')) %>% 
+  mutate(county_code = if_else(str_length(county_code) == 4,
+                        str_c("0", as.character(county_code)),
+                        as.character(county_code)))
+```
+
+### Conduct Edits 
+
+```{r}
+base_year <- 2010
+
+dat_edit <- dat %>% 
+  filter(year >= 2010, !is.na(county)) %>%
+  mutate(time = year - base_year, #Normalize time to 2012 = 0
+         time_orig_vals = time)
+```
+
+```{r}
+#take the mean population over the 8 yrs represented 
+dat_500 <- dat_edit %>% 
+  group_by(county_code) %>% 
+  summarize(mean_pop = mean(population)) %>% 
+  ungroup()
+
+#subset the top 500 most populous counties 
+dat_500 <- dat_500[order(dat_500$mean_pop, decreasing = TRUE),]
+dat_500 <- dat_500[1:500,]
+dat_edit <- subset(dat_edit, county_code %in% dat_500$county_code)
+
+#check to see that 500 unique counties are represented
+num_counties_dat_500 <- length(unique(dat_edit$county_code))
+num_counties_dat_500
+```
+
+```{r}
+#arrange/order counties by name and year
+dat_est <- dat_edit %>% arrange(county, year)
+
+dat_est <- dat_est %>% filter(year < 2018)
+```
+
+```{r}
+lapply(dat_est, class)
+
+dat_est <- dat_est %>% 
+  mutate(death_rate_lag1 = as.numeric(death_rate_lag1)) %>% 
+  mutate(crude_rate = as.numeric(crude_rate))
+```
+
+# Model
+
+## Write Model
+
+Fit a generalized linear model to the county-level all cause mortality data: 
+
+```{r}
+fit <- glm(deaths ~ offset(log(exposure)) +
+             death_rate_lag1 +
+             time*factor(county_code),
+           family = quasipoisson(link = "log"),
+           data = dat_est)
+```
+
+## Save Output
+
+Save output to `rda` directory of repo (this was added to the .gitignore):
+
+```{r}
+if(1 == 1){
+  save(fit, file = here('rda_2018/estimated_poisson_glm_parameters.rda'))
+}
+```
+
+## Compare Cluster-Robust Errors
+
+```{r}
+vmat_rob <- vcovCL(fit, cluster = ~ county_code)
+clust_ses <- sqrt(diag(vmat_rob)) 
+
+#save to rda directory
+if(1 == 1){
+  save(clust_ses, file = here('rda_2018/estimated_poisson_glm_ses.rda'))
+}
+```
+
+## Predict
+
+```{r}
+dat_est <- dat_est %>%
+  mutate(fitted_deaths_all_yrs = exp(predict.glm(fit, dat_est)),
+         fitted_death_rate_all_yrs = fitted_deaths_all_yrs / (exposure))
+```
+
+```{r}
+#2018
+dat_2018 <- dat_edit %>% 
+  filter(year == "2018") %>% 
+  mutate(death_rate_lag1 = as.numeric(death_rate_lag1))
+
+dat_2018 <- dat_2018 %>%
+  mutate(fitted_deaths_2018 = exp(predict.glm(fit, dat_2018)),
+         fitted_death_rate_2018 = fitted_deaths_2018 / (exposure))
+
+#2021
+# dat_2021 <- dat_edit %>% 
+#   filter(year == "2021")
+# 
+# dat_2021 <- dat_2021 %>%
+#   mutate(fitted_deaths_2021 = exp(predict.glm(fit, dat_2021)),
+#          fitted_death_rate_2021 = fitted_deaths_2021 / (exposure))
+
+#2022
+# dat_2022 <- dat_edit %>% 
+#   filter(year == "2022") %>% 
+#   mutate(death_rate_lag1 = as.numeric(death_rate_lag1))
+# 
+# dat_2022 <- dat_2022 %>%
+#   mutate(fitted_deaths_2022 = exp(predict.glm(fit, dat_2022)),
+#          fitted_death_rate_2022 = fitted_deaths_2022 / (exposure))
+```
+
+### Prediction 95% interval for all years
+
+```{r}
+mod_mat <- model.matrix(fit)
+alpha <- .05
+nsims <- 1000
+npreds <- nrow(dat_est)
+overdisp <- summary(fit)$dispersion
+sim_response_mat <- matrix(NA, ncol = nsims, nrow = npreds)
+```
+
+```{r}
+#Sample from coef distributions
+#This is a modification of the add_pi function in ciTools which uses robust standard errors
+#See https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html for complete details
+sim_coefs <- sim_glm_robust(fit, n.sims = nsims, ses = clust_ses)
+save(sim_coefs, file = here('rda/estimated_poisson_glm_simulated_coefs.rda'))
+```
+
+```{r}
+for(i in 1:nsims){
+  #Fitted value with new coef draw
+  yhat <- dat_est$death_offset * exp (mod_mat %*% sim_coefs@coef[i,])
+  
+  disp_parm <- yhat / (overdisp - 1) #Set new dispersion parameter
+  
+  #Draw new death count and fill in matrix. Each row is now a sample of size nsims for each county-year. Each col is a draw.
+  sim_response_mat[,i] <- rnegbin(n = npreds,
+                                  mu = yhat,
+                                  theta = disp_parm)
+}
+```
+
+```{r}
+#Gather statistics from simulated distributions
+sds <- sqrt(apply(sim_response_mat, 1, var))
+lwr <- apply(sim_response_mat, 1, FUN = quantile, probs = alpha / 2)
+upr <- apply(sim_response_mat, 1, FUN = quantile, probs = 1 - alpha / 2)
+```
+
+```{r}
+#Add the computed predictions intervals to main table
+dat_est <- dat_est %>% 
+  mutate(pred_deaths_lwr_ci = lwr,
+         pred_deaths_upr_ci = upr,
+         pred_death_rate_lwr_ci = lwr/death_offset,
+         pred_death_rate_upr_ci = upr/death_offset,
+         pred_death_std_err = sds,
+         pred_death_rate_std_err = sds/death_offset
+         
+  )
+```
+
+```{r}
+#Produce plot to make sure eveything looks fine
+
+ggplot(dat_2020, aes(x = year, y = deaths)) +
+  ggtitle("Quasipoisson Regression", subtitle = "Model fit (black line), with Prediction intervals (gray), Confidence intervals (dark gray)") +
+  geom_point(size = 2) +
+  geom_line(aes(x = year, y = fitted_deaths_2020), size = 1.2)
+  #geom_ribbon(aes(ymin = pred_deaths_lwr_ci , ymax = pred_deaths_upr_ci), alpha = 0.2)
+```
+
+```{r}
+# Estimate prediction interval for 2020. This repeats everything from prior chunk just using 2020 data
+#Need this just to get model matrix for 2022
+dat_2020 <- semi_join(dat_2020,dat_est, by = 'county_code')
+dat_est2 <- dat_est %>% filter(time == 24) %>% bind_rows(dat_2022)
+
+
+fit2 <- glm(deaths ~ offset(log(exposure)) +
+              death_rate_lag1 +
+              time +
+              time*factor(county_code),
+            family = quasipoisson(link = "log"), 
+            data = dat_est2)
+
+
+```
+
+# EDA
+
+```{r}
+years_list <- unique(dat_est$year)
+
+dat_est <- dat_est %>% 
+  rename(fips = "county_code")
+
+plot_by_year <- function(dat_est, year) {
+  
+  #filter data by year
+  dat_est_year <- dat_est %>% 
+    filter(year == year)
+  
+  #plot choropleth map
+  plot_usmap(data = dat_est,
+             regions = "counties",
+             values = "fitted_death_rate_all_yrs",
+             size = 0.1) + 
+    labs(title = paste0("Predicted Mortality Rate:\n 500 Most Populous Counties in ",
+                        year)) +
+    theme(legend.position = "bottom")
+  
+  #save image
+  ggsave(filename = here(paste0("output/viz/fitted_death_500_maps_", year, ".png")),
+         dpi = 300,
+         width = 6,
+         height = 6,
+         bg = "white")
+}
+
+for (i in 1:length(years_list)) {
+  plot_by_year(dat_est = dat_est, year = years_list[i])
+}
+
+#test function
+plot_by_year(dat_est = dat_est, year = 2018)
+```
+

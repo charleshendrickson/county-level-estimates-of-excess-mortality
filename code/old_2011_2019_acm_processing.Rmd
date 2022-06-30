@@ -1,0 +1,96 @@
+---
+title: "2011-2019_acm_processing"
+author: "Charles Hendrickson"
+date: '2022-06-27'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install and load librarian package if needed 
+if (!require(librarian)) {
+  install.packages("librarian")
+  library(librarian)
+}
+
+# load packages
+librarian::shelf(janitor,
+                 tidyverse, 
+                 naniar,
+                 here)
+```
+
+```{r}
+#load data 
+acm_2011_2019_raw <- read.delim2(here("raw_data/ACM_2011-2019.txt"))
+```
+
+```{r}
+#remove unnecessary columns 
+acm_2011_2019 <- acm_2011_2019_raw %>% 
+  clean_names() %>% 
+  select(!c(notes, year_code)) %>%
+  separate(county, into = c("county", "state"), sep = ", ") %>%
+  mutate(county = str_remove_all(string = county, pattern = " County"))
+```
+
+```{r}
+#Next, lets check out the missing data values in the data using the `naniar` package, which provides useful functions for examining initial missing value counts and proportions. 
+
+# Returns NA count in your data frame or column
+n_miss(acm_2011_2019)
+
+# Returns number of complete values
+n_complete(acm_2011_2019)
+
+# Proportion or percentage of values that are NA
+prop_miss(acm_2011_2019) 
+
+pct_miss(acm_2011_2019)
+
+# A summary table of NA counts in your table
+miss_var_summary(acm_2011_2019)
+
+# A summary table of NAs by case (observation)
+miss_case_table(acm_2011_2019)
+
+# Remove all rows with missing values
+acm_2011_2019 <- na.omit(acm_2011_2019)
+
+# check to see if missing values have been dropped
+pct_miss(acm_2011_2019)
+```
+
+```{r}
+#create lag time
+acm_2011_2019 <- acm_2011_2019 %>% 
+group_by(county_code) %>% 
+  mutate(death_rate_lag1 = lag(crude_rate) %>% 
+  ungroup() 
+```
+
+
+```{r}
+#create csv in raw_data folder 
+acm_2011_2019 %>% write_csv(file.path(here("raw_data/ACM_2011_2019.csv")))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

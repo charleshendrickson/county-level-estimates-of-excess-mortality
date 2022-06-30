@@ -1,0 +1,141 @@
+---
+title: "ACM Data Preprocessing"
+author: "Scout Leonard, Charles Hendrickson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries 
+
+```{r}
+#install and load librarian package if needed 
+if (!require(librarian)) {
+  install.packages("librarian")
+  library(librarian)
+}
+
+# load packages
+shelf(tidyverse,
+      here,
+      janitor)
+```
+
+# Read in Data
+
+## 2009 - 2017 All Cause Mortality
+
+```{r}
+acm_2009_2017 <- read.delim2(here("raw_data/acm_2009-2017.txt")) %>% 
+  clean_names() %>% 
+  subset(select=-c(notes, year_code)) %>% 
+  separate(county, into = c("county", "state"), sep = ", ") %>% 
+  mutate(county_code = if_else(str_length(county_code) == 4,
+                        str_c("0", as.character(county_code)),
+                        as.character(county_code)))
+  # write_csv(file.path(here("raw_data/acm_2009-2017.csv")))
+```
+
+
+## 2011 - 2019 All Cause Mortality
+
+```{r}
+acm_2011_2019 <- read.delim2(here("raw_data/acm_2011-2019.txt")) %>% 
+  clean_names() %>% 
+  subset(select=-c(notes, year_code)) %>% 
+  separate(county, into = c("county", "state"), sep = ", ") %>% 
+  mutate(county_code = if_else(str_length(county_code) == 4,
+                        str_c("0", as.character(county_code)),
+                        as.character(county_code)))
+  # write_csv(file.path(here("raw_data/acm_2011-2019.csv")))
+```
+
+
+## 2018 All Cause Mortality 
+
+```{r}
+acm_2018 <- read.delim2(here("raw_data/acm_2011-2019.txt")) %>% 
+  clean_names() %>%
+  dplyr::filter(year == 2018) %>% 
+  subset(select=-c(notes, year_code)) %>% 
+  separate(county, into = c("county", "state"), sep = ", ") %>% 
+  mutate(county_code = if_else(str_length(county_code) == 4,
+                        str_c("0", as.character(county_code)),
+                        as.character(county_code)))
+```
+
+
+
+## 2020 All Cause Mortality 
+
+```{r}
+acm_2020 <- read.delim2(here("raw_data/acm_2020_complete.txt")) %>% 
+  clean_names() %>% 
+  dplyr::select(-c(notes)) %>% 
+  separate(residence_county, into = c("county", "state"), sep = ", ") %>% 
+  rename("county_code" = residence_county_code) %>% 
+  mutate(year = "2020") %>% 
+  mutate(county_code = if_else(str_length(county_code) == 4,
+                        str_c("0", as.character(county_code)),
+                        as.character(county_code)))
+```
+
+
+## 2021 All Cause Mortality
+
+```{r}
+# acm_2021 <- read.delim2(here("raw_data/acm_2021.txt")) %>% 
+#   clean_names() %>% 
+#   select(-c(notes)) %>% 
+#   separate(residence_county, into = c("county", "state"), sep = ", ") %>% 
+#   rename("county_code" = residence_county_code) %>% 
+#   mutate(year = "2021") %>% 
+#   mutate(county_code = if_else(str_length(county_code) == 4,
+#                         str_c("0", as.character(county_code)),
+#                         as.character(county_code)))
+```
+
+
+## 2022 All Cause Mortality 
+
+```{r}
+# acm_2022 <- read.delim2(here("raw_data/acm_2022.txt")) %>% 
+#   clean_names() %>% 
+#   select(-c(notes)) %>% 
+#   separate(residence_county, into = c("county", "state"), sep = ", ") %>% 
+#   rename("county_code" = residence_county_code) %>% 
+#   mutate(year = "2022") %>% 
+#   mutate(county_code = if_else(str_length(county_code) == 4,
+#                         str_c("0", as.character(county_code)),
+#                         as.character(county_code)))
+```
+
+# Combine Datasets and Calculate Lag
+
+```{r}
+#for 2018 prediction 
+acm_2009_2018 <- rbind(acm_2009_2017,
+                       acm_2018) %>% 
+  group_by(county_code) %>% 
+  mutate(death_rate_lag1 = lag(crude_rate, n = 1, default = NA),
+         total_deaths_lag1 = lag(deaths, n = 1, defailt = NA)) %>% 
+  ungroup() %>% 
+  mutate(exposure = population / 100000) %>%
+  write_csv(file.path(here("raw_data/acm_2009-2018.csv")))
+```
+
+```{r}
+#for 2020 prediction 
+acm_2011_2020 <- rbind(acm_2011_2019,
+                       acm_2020) %>% 
+  group_by(county_code) %>% 
+  mutate(death_rate_lag1 = lag(crude_rate, n = 1, default = NA),
+         total_deaths_lag1 = lag(deaths, n = 1, defailt = NA)) %>% 
+  ungroup() %>% 
+  mutate(exposure = population / 100000) %>% 
+  write_csv(file.path(here("raw_data/acm_2011-2020.csv")))
+```
+

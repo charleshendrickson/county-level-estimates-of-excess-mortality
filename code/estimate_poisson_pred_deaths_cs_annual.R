@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------
 #Packages
-library(tidyverse)
+library(tidyr)
 library(dplyr)
 library(ggplot2)
 library(data.table)
@@ -17,14 +17,16 @@ libout <- paste0(main_file_path,'/final_data')
 
 #-------------------------------------------------------------------------
 #Utility Functions and External Macors
-any_in <- function(egg,nest){ifelse(sum(egg %in% nest) > 0,1,0)}
+any_in <- function(egg, nest){
+  ifelse(sum(egg %in% nest) > 0, 1, 0)
+  }
 
 #Misc Functions
-source(here("code/ackley_funs.R"))
+source(here("code/ackley_funs.R")) #paste0(main_file_path,'/macros/ackley_funs.R'))
 
 #This is a modification of the add_pi function in ciTools which uses robust standard errors
 #See https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
-source(here("code/sim_glm_robust_fun.R")) 
+source(here("code/sim_glm_robust_fun.R")) #paste0(main_file_path,'/macros/sim_glm_robust_fun.R')) 
 
 
 #-------------------------------------------------------------------------
@@ -33,20 +35,21 @@ source(here("code/sim_glm_robust_fun.R"))
 
 #-------------------------------------------------------------------------
 #Import analysis data
-#setwd(libout)
+#setwd(libin)
 
-dat <- read.csv(here("raw_data/ACM_2011_2019.csv"))
+dat <- read.csv(here('raw_data/acm_2011-2019.csv'))
 #-------------------------------------------------------------------------
+
 #-------------------------------------------------------------------------
 #-------------------------------------------------------------------------
 
 base_year <- 1998
-dat_edit <- dat %>% filter(year >= 2011, !is.na(county_code)) %>%
-  mutate(time = year - base_year, #Normalize time to 1999=1
+
+dat_edit <- dat %>% filter(year >= 2011, !is.na(county)) %>%
+  mutate(time = year - base_year, #Normalize time to 1999 = 1
          time_orig_vals = time)
-#dat_edit <- dat_edit %>% arrange(county_code,year)
-#dat_est <- dat_edit %>% filter(year < 2020) 
-#dat_2020 <- dat_edit %>% filter(year == 2020)
+
+#dat_est <- dat_edit %>% filter(year < 2020) NOTE: maybe i need 2022 in this dataset
 
 #take the mean population over the 8 yrs represented 
 dat_500 <- dat_edit %>% 
@@ -66,9 +69,7 @@ num_counties_dat_500
 #arrange/order counties by name and year
 dat_est <- dat_edit %>% arrange(county, year)
 
-
-
-
+#dat_2020 <- dat_edit %>% filter(year == 2020)
 
 fit <- glm(deaths ~ death_rate_lag1 +
              time +
@@ -82,49 +83,40 @@ fit <- glm(deaths ~ death_rate_lag1 +
 #   save(fit, file = 'estimated_poisson_glm_parameters.rda')
 # }
 
-
 #Compute cluster-robust errors
-vmat_rob <- vcovCL(fit,cluster = ~ county_code)
+vmat_rob <- vcovCL(fit, cluster = ~ county_code)
 clust_ses <- sqrt(diag(vmat_rob)) #produces warning: NAs produced 
 
 # if(1==1){
 #   save(clust_ses, file = 'estimated_poisson_glm_ses.rda')
 # }
-#Add fitted values for all years and predicted values for 2020
 
+#Add fitted values for all years and predicted values for 2022
 dat_est <- dat_est %>%
-  mutate(fitted_deaths_all_yrs = exp(predict.glm(fit, dat_est)),)
-         #fitted_death_rate_all_yrs = fitted_deaths_all_yrs/death_offset)
+  mutate(fitted_deaths_all_yrs = exp(predict.glm(fit, dat_est)),
+         #fitted_death_rate_all_yrs = fitted_deaths_all_yrs/death_offset
+         )
 
-#read in 2020 complete data 
-dat_2020 <- read_csv(here("final_data/2020_ACM_complete.csv"))
+#read in 2022 provisional data 
+dat_2021_2022 <- read_csv("raw_data/acm_2021-2022_provisional.csv")
 
-#base_year = 1998
 #set time var
-dat_2020_edit <- dat_2020 %>%
-  filter(!is.na(county)) %>% # excluded ' year >= 2011, ' here bc gives error
+dat_2021_2022_edit <- dat_2021_2022 %>%
+  filter(year >= 2011, !is.na(county)) %>%
   mutate(time = year - base_year, #Normalize time to 1999 = 1
          time_orig_vals = time)
 
 #subset to include the 500 most populous counties
-dat_2020_edit <- subset(dat_2020_edit, county_code %in% dat_500$county_code)
+dat_2021_2022_edit <- subset(dat_2021_2022_edit, county_code %in% dat_500$county_code)
 
 #check to see that 500 unique counties are represented
-num_counties_dat_500_2020 <- length(unique(dat_2020_edit$county_code))
-num_counties_dat_500_2020
+num_counties_dat_500_2022 <- length(unique(dat_2021_2022_edit$county_code))
+num_counties_dat_500_2022
 
-dat_2020 <- dat_2020_edit %>% 
-  mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2020_edit)),
+dat_2021_2022 <- dat_2021_2022_edit %>% 
+  mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2021_2022_edit)),
          #fitted_death_rate_2020 = fitted_deaths_2020/death_offset
-  )
-
-
-
-
-
-# dat_2020 <- dat_2020 %>% 
-#   mutate(fitted_deaths_2020 = exp(predict.glm(fit, dat_2020)),
-#          fitted_death_rate_2020 = fitted_deaths_2020/death_offset)
+         )
 
 #-------------------------------------------------------------------------
 #-------------------------------------------------------------------------
@@ -181,7 +173,7 @@ dat_est <- dat_est %>%
 #-------------------------------------------------------------------------
 
 #Produce plot to make sure eveything looks fine
-check_dat <- dat_est %>% filter(county_code == '01CS031')
+check_dat <- dat_est %>% filter(cs_code == '01CS031')
 
 ggplot(check_dat, aes(x = year, y = total_deaths)) +
   ggtitle("Quasipoisson Regression", subtitle = "Model fit (black line), with Prediction intervals (gray), Confidence intervals (dark gray)") +
@@ -191,15 +183,15 @@ ggplot(check_dat, aes(x = year, y = total_deaths)) +
 #-------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------
-# Estimate prediction interval for 2020. This repeats everything from prior chunk just using 2020 data
+# Estimate prediction interval for 2022. This repeats everything from prior chunk just using 2020 data
 #Need this just to get model matrix for 2020
-dat_2020 <- semi_join(dat_2020,dat_est, by = 'county_code')
-dat_est2 <- dat_est %>% filter(time == 19) %>% bind_rows(dat_2020)
+dat_2022 <- semi_join(dat_2022, dat_est, by = 'cs_code')
+dat_est2 <- dat_est %>% filter(time == 19) %>% bind_rows(dat_2022)
 
 
 fit2 <- glm(total_deaths ~ offset(log(death_offset)) + death_rate_lag1 +
               time +
-              time*factor(county_code) , family = quasipoisson(link = "log") ,data = dat_est2)
+              time*factor(cs_code) , family = quasipoisson(link = "log") ,data = dat_est2)
 
 
 mod_mat <- model.matrix(fit2)
@@ -222,7 +214,7 @@ for(i in 1:nsims){
 
 
 if(1==1){
-  boot_samp_out <- bind_cols(as.data.frame(sim_response_mat),dat_2020[,c('county_code','death_rate','death_offset')]) %>% 
+  boot_samp_out <- bind_cols(as.data.frame(sim_response_mat),dat_2020[,c('cs_code','death_rate','death_offset')]) %>% 
     rename(all_cause_death_rate_2020 = death_rate, death_offset_2020 = death_offset)
   saveRDS(boot_samp_out, file = 'full_bootstrap_sample_2020.rds')
 }
@@ -291,7 +283,7 @@ dat_newrows_2020 <- dat_2020 %>%
     pred_death_rate_lwr_ci = pred_death_rate_lwr_ci_2020)
 
 dat_pan <- dat_est %>%
-  bind_rows(.,dat_newrows_2020) %>% arrange(county_code, time)
+  bind_rows(.,dat_newrows_2020) %>% arrange(cs_code, time)
 
 
 dat_pan_out <- dat_pan %>% 
